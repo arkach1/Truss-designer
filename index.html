@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truss Designer</title>
+<style>
+:root{
+  /* Layout: drawing board on the left, analysis and tables on the right. Single light theme, black text. */
+  --ink:#000; --paper:#fff; --panel:#f4f5f6; --line:#b9bec4; --grid:#e3e6ea;
+  --tension:#1558b0; --compression:#c62828; --zero:#8a8f96; --load:#0b7a3b; --react:#7b3fb3; --pick:#e08a00;
+  --font:"Times New Roman", Times, serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);font-size:16px;color:var(--ink);background:var(--paper);display:flex;flex-direction:column}
+button,input,select,textarea{font:inherit;color:var(--ink)}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:22px;margin:0;font-weight:bold}
+header .grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 430px}
+#left{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid var(--line)}
+#tools{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px;border-bottom:1px solid var(--line)}
+#opts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:6px 16px;border-bottom:1px solid var(--line);min-height:40px;font-size:15px}
+button{background:var(--paper);border:1px solid #6b7178;border-radius:4px;padding:4px 10px;cursor:pointer}
+button:hover{background:#e9ecef}
+button[aria-pressed="true"]{background:#000;color:#fff;border-color:#000}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--pick);outline-offset:1px}
+.sep{width:1px;align-self:stretch;background:var(--line);margin:0 4px}
+#board{position:relative;flex:1;min-height:420px}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;background:var(--paper);user-select:none}
+#legend{position:absolute;left:12px;bottom:10px;background:rgba(255,255,255,.93);border:1px solid var(--line);border-radius:4px;padding:6px 10px;font-size:14px;display:grid;grid-template-columns:auto auto;gap:2px 8px;align-items:center;pointer-events:none}
+#legend i{display:block;width:34px;height:0;border-top:4px solid}
+#right{overflow:auto;padding:10px 16px 24px;display:flex;flex-direction:column;gap:14px;min-height:0}
+section h2{font-size:17px;margin:0 0 6px;border-bottom:1px solid #000;padding-bottom:2px}
+#status{border:1px solid var(--line);border-left:6px solid var(--zero);padding:6px 10px;border-radius:3px;background:var(--panel)}
+#status.ok{border-left-color:var(--load)} #status.bad{border-left-color:var(--compression)}
+#status p{margin:2px 0}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:15px;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:2px 5px;text-align:right;white-space:nowrap}
+th{background:var(--panel);text-align:center}
+td:first-child{text-align:center;font-weight:bold}
+td input[type=number]{width:3.9em;border:1px solid transparent;background:transparent;text-align:right;padding:1px 2px}
+td input[type=number]:hover,td input[type=number]:focus{border-color:#6b7178;background:#fff}
+td select{border:1px solid transparent;background:transparent;max-width:9.5em}
+td button{padding:0 6px;border-color:transparent;background:transparent}
+tr.sel td{background:#fff1d6}
+.sw{display:inline-block;width:18px;border-top:4px solid;vertical-align:middle;margin-right:5px}
+.step{margin:0 0 10px}
+.step b{display:block}
+.step div{padding-left:14px;text-indent:-14px;margin-left:14px;overflow-wrap:anywhere}
+label.rad{display:flex;gap:6px;align-items:baseline;margin:2px 0}
+.sub{margin-left:24px}
+#opts input[type=number]{width:5em}
+#dlg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:5}
+#dlg.open{display:flex}
+#dlg>div{background:#fff;border:1px solid #000;border-radius:6px;padding:14px;width:min(640px,100%);display:flex;flex-direction:column;gap:8px}
+#dlg textarea{width:100%;height:240px;font-family:Consolas,monospace;font-size:13px}
+.ml,.jl,.al{font-family:var(--font);fill:#000;paint-order:stroke;stroke:#fff;stroke-width:4px;stroke-linejoin:round}
+.ml{font-size:14px;font-weight:bold}.jl{font-size:16px;font-weight:bold;font-style:italic}.al{font-size:13px}
+@media (max-width:980px){
+  body{height:auto}
+  main{display:block}
+  #left{border-right:0}
+  #board{height:62vh;flex:none}
+  #right{overflow:visible}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Truss Designer</h1>
+  <div class="grp">
+    <label for="ex">Example</label>
+    <select id="ex">
+      <option value="">Load an example</option>
+      <option value="pratt">Pratt bridge truss</option>
+      <option value="roof">Howe roof truss</option>
+      <option value="cant">Cantilever truss</option>
+      <option value="tri">Simple triangle</option>
+    </select>
+  </div>
+  <div class="grp">
+    <label for="fu">Force unit</label>
+    <select id="fu"><option>kN</option><option>N</option><option>lb</option><option>kip</option></select>
+    <label for="lu">Length unit</label>
+    <select id="lu"><option>m</option><option>mm</option><option>ft</option><option>in</option></select>
+  </div>
+  <div class="grp">
+    <button id="bUndo" title="Ctrl+Z">Undo</button>
+    <button id="bRedo" title="Ctrl+Y">Redo</button>
+    <button id="bFit">Fit view</button>
+    <button id="bClear">Clear all</button>
+    <button id="bData">Save / open</button>
+  </div>
+</header>
+<main>
+  <div id="left">
+    <div id="tools" role="toolbar" aria-label="Drawing tools">
+      <button data-tool="select">Select / move</button>
+      <button data-tool="joint">Add joint</button>
+      <button data-tool="member">Add member</button>
+      <button data-tool="support">Add support</button>
+      <button data-tool="load">Add load</button>
+      <button data-tool="cut">Section cut</button>
+      <button data-tool="delete">Delete</button>
+    </div>
+    <div id="opts"></div>
+    <div id="board">
+      <svg id="cv" xmlns="http://www.w3.org/2000/svg" aria-label="Truss drawing board"></svg>
+      <div id="legend">
+        <i style="border-color:var(--tension)"></i><span>Tension (T)</span>
+        <i style="border-color:var(--compression)"></i><span>Compression (C)</span>
+        <i style="border-color:var(--zero);border-top-style:dashed"></i><span>Zero-force member</span>
+        <i style="border-color:var(--load)"></i><span>Applied load</span>
+        <i style="border-color:var(--react)"></i><span>Support reaction</span>
+      </div>
+    </div>
+  </div>
+  <div id="right">
+    <section>
+      <h2>Analysis method</h2>
+      <label class="rad"><input type="radio" name="method" id="mJ" value="joints"> Method of joints</label>
+      <label class="rad"><input type="radio" name="method" id="mS" value="sections"> Method of sections</label>
+      <div class="sub" id="secOpts">
+        <label class="rad"><input type="radio" name="secmode" id="sA" value="auto"> Automatic: find a section for every member</label>
+        <label class="rad"><input type="radio" name="secmode" id="sM" value="manual"> Manual: I draw the section cut</label>
+      </div>
+      <div id="status" style="margin-top:8px"></div>
+    </section>
+    <section>
+      <h2>Member forces</h2>
+      <div class="tw"><table id="mt"></table></div>
+    </section>
+    <section>
+      <h2>Support reactions</h2>
+      <div class="tw"><table id="rt"></table></div>
+    </section>
+    <section>
+      <h2>Joints, supports and loads</h2>
+      <div class="tw"><table id="jt"></table></div>
+    </section>
+    <section>
+      <h2>Worked solution</h2>
+      <div id="steps"></div>
+    </section>
+  </div>
+</main>
+<div id="dlg" role="dialog" aria-label="Save or open a truss">
+  <div>
+    <b>Save or open a truss</b>
+    <span>To save, copy this text and keep it in a file. To open a saved truss, paste its text here and choose Open.</span>
+    <textarea id="dTxt" spellcheck="false"></textarea>
+    <span id="dMsg"></span>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button id="dCopy">Copy</button><button id="dOpen">Open</button><button id="dClose">Close</button>
+    </div>
+  </div>
+</div>
+<script>
+//<core>
+function nf(v,d){
+  d=d==null?3:d; if(!isFinite(v)) return '?';
+  if(Math.abs(v)<0.5*Math.pow(10,-d)) v=0;
+  let s=v.toFixed(d);
+  if(s.indexOf('.')>=0) s=s.replace(/0+$/,'').replace(/\.$/,'');
+  return s.replace('-','−');
+}
+function lin(terms,k){
+  let s='';
+  const add=(c,n)=>{
+    if(Math.abs(c)<1e-9) return;
+    const a=Math.abs(c), body=n?((Math.abs(a-1)<1e-9?'':nf(a)+' ')+n):nf(a);
+    s+= s===''?((c<0?'−':'')+body):((c<0?' − ':' + ')+body);
+  };
+  terms.forEach(t=>add(t.c,t.n)); add(k,'');
+  return (s||'0')+' = 0';
+}
+function solveLin(A,b){
+  const n=b.length; A=A.map(r=>r.slice()); b=b.slice();
+  for(let i=0;i<n;i++){
+    let p=i; for(let r=i+1;r<n;r++) if(Math.abs(A[r][i])>Math.abs(A[p][i])) p=r;
+    if(Math.abs(A[p][i])<1e-9) return null;
+    const ta=A[i];A[i]=A[p];A[p]=ta; const tb=b[i];b[i]=b[p];b[p]=tb;
+    for(let r=i+1;r<n;r++){ const f=A[r][i]/A[i][i]; if(f){ for(let c=i;c<n;c++) A[r][c]-=f*A[i][c]; b[r]-=f*b[i]; } }
+  }
+  const x=new Array(n);
+  for(let i=n-1;i>=0;i--){ let s=b[i]; for(let c=i+1;c<n;c++) s-=A[i][c]*x[c]; x[i]=s/A[i][i]; }
+  return x;
+}
+function segCross(a,b,c,d){
+  const o=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+  const d1=o(c,d,a),d2=o(c,d,b),d3=o(a,b,c),d4=o(a,b,d);
+  return ((d1>0&&d2<0)||(d1<0&&d2>0))&&((d3>0&&d4<0)||(d3<0&&d4>0));
+}
+function analyzeTruss(S,opt){
+  const res={ok:false,err:null,hint:null,warn:[],forces:{},reactions:[],steps:[],det:'',cutIds:[],sideIds:[],tol:0};
+  const fu=opt.fu, lu=opt.lu, jm={};
+  S.joints.forEach(j=>jm[j.id]=j);
+  const M=S.members.filter(m=>jm[m.a]&&jm[m.b]);
+  const mn=m=>jm[m.a].name+jm[m.b].name;
+  const Fn=m=>'F<sub>'+mn(m)+'</sub>';
+  const step=(t,l)=>res.steps.push({t:t,l:l});
+  if(!M.length){res.err='Add at least two joints and one member to begin.';return res;}
+  const inc={},g={}; S.joints.forEach(j=>inc[j.id]=[]);
+  for(const m of M){
+    const a=jm[m.a],b=jm[m.b],L=Math.hypot(b.x-a.x,b.y-a.y);
+    if(L<1e-9){res.err='Member '+mn(m)+' has zero length. Move one of its joints.';return res;}
+    g[m.id]={L:L,ux:(b.x-a.x)/L,uy:(b.y-a.y)/L}; inc[m.a].push(m); inc[m.b].push(m);
+  }
+  const act=S.joints.filter(j=>inc[j.id].length);
+  S.joints.forEach(j=>{ if(!inc[j.id].length&&(j.sup||j.fx||j.fy)) res.warn.push('Joint '+j.name+' has no members, so its support or load is ignored.'); });
+  const R=[];
+  act.forEach(j=>{
+    if(j.sup==='pin'){R.push({j:j,dx:1,dy:0,n:j.name+'<sub>x</sub>'});R.push({j:j,dx:0,dy:1,n:j.name+'<sub>y</sub>'});}
+    else if(j.sup==='rv') R.push({j:j,dx:0,dy:1,n:j.name+'<sub>y</sub>'});
+    else if(j.sup==='rh') R.push({j:j,dx:1,dy:0,n:j.name+'<sub>x</sub>'});
+  });
+  const nj=act.length,m=M.length,r=R.length;
+  res.det='m + r = '+m+' + '+r+' = '+(m+r)+' and 2j = '+(2*nj);
+  if(r<3){res.err='The truss needs at least three reaction components to be held in place, for example one pin and one roller. It has '+r+'.';return res;}
+  if(m+r<2*nj){res.err='Unstable: '+res.det+'. The truss is a mechanism. Add '+(2*nj-m-r)+' member(s) or reaction component(s).';return res;}
+  if(m+r>2*nj){res.err='Statically indeterminate to degree '+(m+r-2*nj)+': '+res.det+'. The methods of joints and sections use statics alone and cannot solve it. Remove '+(m+r-2*nj)+' member(s) or reaction component(s).';return res;}
+  const n=2*nj, idx={}; act.forEach((j,k)=>idx[j.id]=k);
+  const A=[],b=new Array(n).fill(0); for(let i=0;i<n;i++) A.push(new Array(n).fill(0));
+  M.forEach((mm,c)=>{const q=g[mm.id],ia=2*idx[mm.a],ib=2*idx[mm.b]; A[ia][c]=q.ux;A[ia+1][c]=q.uy;A[ib][c]=-q.ux;A[ib+1][c]=-q.uy;});
+  R.forEach((q,c)=>{const k=2*idx[q.j.id]; A[k][m+c]=q.dx; A[k+1][m+c]=q.dy;});
+  let maxLoad=0;
+  act.forEach((j,k)=>{b[2*k]=-(j.fx||0);b[2*k+1]=-(j.fy||0);maxLoad=Math.max(maxLoad,Math.hypot(j.fx||0,j.fy||0));});
+  const x=solveLin(A,b);
+  if(!x){res.err='Geometrically unstable: '+res.det+', but the equilibrium equations have no unique solution. Look for a panel without a diagonal, collinear members at an unsupported joint, or reactions that are all parallel or all pass through one point.';return res;}
+  if(maxLoad===0) res.warn.push('No loads are applied, so every member force is zero.');
+  const tol=1e-7*Math.max(maxLoad,1e-9); res.tol=tol;
+  const nat=v=>Math.abs(v)<=tol?'0':(v>0?'T':'C');
+  const fv=v=>nat(v)==='0'?'0 (zero-force member)':nf(Math.abs(v))+' '+fu+' ('+nat(v)+')';
+  step('Determinacy and sign convention',[
+    res.det+', so the truss is statically determinate.',
+    'Every unknown member force is assumed to be tensile (pulling away from the joint). A positive answer is tension (T) and a negative answer is compression (C).',
+    'Positive x is to the right, positive y is upward, and counterclockwise moments are positive.']);
+  const Rv=new Array(r).fill(null);
+  function globalReactions(){
+    const O=(R.find(q=>q.j.sup==='pin')||R[0]).j;
+    let sx=0,sy=0,sm=0;
+    act.forEach(j=>{const fx=j.fx||0,fy=j.fy||0;sx+=fx;sy+=fy;sm+=(j.x-O.x)*fy-(j.y-O.y)*fx;});
+    const A3=[R.map(q=>(q.j.x-O.x)*q.dy-(q.j.y-O.y)*q.dx),R.map(q=>q.dx),R.map(q=>q.dy)];
+    const s=solveLin(A3,[-sm,-sx,-sy]); if(!s) return false;
+    s.forEach((v,i)=>Rv[i]=v);
+    step('Support reactions (whole truss as a free body)',[
+      '&Sigma;M<sub>'+O.name+'</sub> = 0: '+lin(R.map((q,i)=>({c:A3[0][i],n:q.n})),sm),
+      '&Sigma;F<sub>x</sub> = 0: '+lin(R.map((q,i)=>({c:A3[1][i],n:q.n})),sx),
+      '&Sigma;F<sub>y</sub> = 0: '+lin(R.map((q,i)=>({c:A3[2][i],n:q.n})),sy),
+      'Result: '+R.map((q,i)=>q.n+' = '+nf(s[i])+' '+fu).join(', ')]);
+    return true;
+  }
+  const F={};
+  if(opt.method==='joints'){
+    if(r===3) globalReactions();
+    else step('Support reactions',['There are '+r+' reaction components, more than the three equations of overall equilibrium, so the reactions are found joint by joint together with the member forces.']);
+    for(let guard=0;guard<2000;guard++){
+      let best=null;
+      for(const j of act){
+        const U=[];
+        inc[j.id].forEach(mm=>{ if(F[mm.id]===undefined){const q=g[mm.id],s=mm.a===j.id?1:-1;U.push({n:Fn(mm),cx:s*q.ux,cy:s*q.uy,mm:mm});} });
+        R.forEach((q,i)=>{ if(q.j===j&&Rv[i]===null) U.push({n:q.n,cx:q.dx,cy:q.dy,ri:i}); });
+        if(!U.length||U.length>2) continue;
+        if(U.length===2&&Math.abs(U[0].cx*U[1].cy-U[1].cx*U[0].cy)<1e-9) continue;
+        if(!best||U.length<best.U.length) best={j:j,U:U};
+      }
+      if(!best) break;
+      const j=best.j,U=best.U; let kx=j.fx||0,ky=j.fy||0; const kn=[];
+      if(j.fx||j.fy) kn.push('load ('+nf(j.fx||0)+', '+nf(j.fy||0)+') '+fu);
+      inc[j.id].forEach(mm=>{ if(F[mm.id]!==undefined){const q=g[mm.id],s=mm.a===j.id?1:-1;kx+=s*q.ux*F[mm.id];ky+=s*q.uy*F[mm.id];kn.push(Fn(mm)+' = '+fv(F[mm.id]));} });
+      R.forEach((q,i)=>{ if(q.j===j&&Rv[i]!==null){kx+=q.dx*Rv[i];ky+=q.dy*Rv[i];kn.push(q.n+' = '+nf(Rv[i])+' '+fu);} });
+      const lines=[]; if(kn.length) lines.push('Known at this joint: '+kn.join(', '));
+      const T=U.map(u=>({c:u.cx,n:u.n})),V=U.map(u=>({c:u.cy,n:u.n})); let vals;
+      if(U.length===2){
+        const det=U[0].cx*U[1].cy-U[1].cx*U[0].cy;
+        vals=[(-kx*U[1].cy+ky*U[1].cx)/det,(-U[0].cx*ky+U[0].cy*kx)/det];
+        lines.push('&Sigma;F<sub>x</sub> = 0: '+lin(T,kx)); lines.push('&Sigma;F<sub>y</sub> = 0: '+lin(V,ky));
+      }else if(Math.abs(U[0].cx)>=Math.abs(U[0].cy)){ vals=[-kx/U[0].cx]; lines.push('&Sigma;F<sub>x</sub> = 0: '+lin(T,kx)); }
+      else{ vals=[-ky/U[0].cy]; lines.push('&Sigma;F<sub>y</sub> = 0: '+lin(V,ky)); }
+      U.forEach((u,i)=>{ if(u.mm) F[u.mm.id]=vals[i]; else Rv[u.ri]=vals[i]; });
+      lines.push('Result: '+U.map((u,i)=>u.n+' = '+(u.mm?fv(vals[i]):nf(vals[i])+' '+fu)).join(', '));
+      step('Joint '+j.name,lines);
+    }
+    const left=M.filter(mm=>F[mm.id]===undefined);
+    if(left.length||Rv.some(v=>v===null)){
+      M.forEach((mm,c)=>{ if(F[mm.id]===undefined) F[mm.id]=x[c]; });
+      Rv.forEach((v,i)=>{ if(v===null) Rv[i]=x[m+i]; });
+      step('Remaining joints solved together',[
+        'No remaining joint has two or fewer unknowns, so the equations of the remaining joints were solved simultaneously.',
+        'Result: '+(left.length?left.map(mm=>Fn(mm)+' = '+fv(F[mm.id])).join(', '):'remaining reactions found')]);
+    }
+    M.forEach(mm=>res.forces[mm.id]=F[mm.id]);
+  }else{
+    if(!(r===3&&globalReactions())){
+      Rv.forEach((v,i)=>Rv[i]=x[m+i]);
+      step('Support reactions',['There are '+r+' reaction components, so they cannot all be found from overall equilibrium. They were found from the joint equations: '+R.map((q,i)=>q.n+' = '+nf(Rv[i])+' '+fu).join(', ')]);
+    }
+    const ext={}; act.forEach(j=>ext[j.id]={fx:j.fx||0,fy:j.fy||0});
+    R.forEach((q,i)=>{ext[q.j.id].fx+=q.dx*Rv[i];ext[q.j.id].fy+=q.dy*Rv[i];});
+    let Ls=0; M.forEach(mm=>Ls=Math.max(Ls,g[mm.id].L));
+    const split=cut=>{
+      const comp={}; let nc=0;
+      for(const j of act){
+        if(comp[j.id]!==undefined) continue;
+        if(nc===2) return null;
+        const st=[j.id]; comp[j.id]=nc;
+        while(st.length){const u=st.pop(); for(const mm of inc[u]){ if(cut.has(mm.id)) continue; const w=mm.a===u?mm.b:mm.a; if(comp[w]===undefined){comp[w]=nc;st.push(w);} } }
+        nc++;
+      }
+      if(nc!==2) return null;
+      for(const mm of M) if(cut.has(mm.id)&&comp[mm.a]===comp[mm.b]) return null;
+      return comp;
+    };
+    const pickSide=(comp,flip)=>{ let c0=0,c1=0; act.forEach(j=>{ if(comp[j.id]===0)c0++; else c1++; }); let s=c0<=c1?0:1; if(flip)s=1-s; return {s:s,small:Math.min(c0,c1)}; };
+    const ptName=P=>{ const j=act.find(q=>Math.hypot(q.x-P.x,q.y-P.y)<1e-7*Math.max(Ls,1)); return j?'joint '+j.name:'point ('+nf(P.x)+', '+nf(P.y)+')'; };
+    const secSolve=(t,others,comp,side)=>{
+      const end=mm=>{const q=g[mm.id]; return comp[mm.a]===side?{p:jm[mm.a],ux:q.ux,uy:q.uy}:{p:jm[mm.b],ux:-q.ux,uy:-q.uy};};
+      const T=end(t),O=others.map(end); let P=null,nx=0,ny=0,why='';
+      if(O.length===0){ nx=T.ux;ny=T.uy; why='forces along '+mn(t); }
+      else if(O.length===1){
+        const arm=(T.p.x-O[0].p.x)*T.uy-(T.p.y-O[0].p.y)*T.ux;
+        if(Math.abs(arm)>1e-7*Ls){ P={x:O[0].p.x,y:O[0].p.y}; why='a point on the line of '+mn(others[0]); }
+        else{ nx=-O[0].uy;ny=O[0].ux; why='forces perpendicular to '+mn(others[0]); }
+      }else{
+        const d=O[0].ux*O[1].uy-O[0].uy*O[1].ux;
+        if(Math.abs(d)>1e-9){
+          const s=((O[1].p.x-O[0].p.x)*O[1].uy-(O[1].p.y-O[0].p.y)*O[1].ux)/d;
+          P={x:O[0].p.x+s*O[0].ux,y:O[0].p.y+s*O[0].uy}; why='where the lines of '+mn(others[0])+' and '+mn(others[1])+' meet';
+        }else{ nx=-O[0].uy;ny=O[0].ux; why='forces perpendicular to the parallel members '+mn(others[0])+' and '+mn(others[1]); }
+      }
+      let c,k=0,line;
+      if(P){
+        c=(T.p.x-P.x)*T.uy-(T.p.y-P.y)*T.ux; if(Math.abs(c)<1e-7*Ls) return null;
+        act.forEach(j=>{ if(comp[j.id]===side) k+=(j.x-P.x)*ext[j.id].fy-(j.y-P.y)*ext[j.id].fx; });
+        line='&Sigma;M = 0 about '+ptName(P)+' ('+why+'): '+lin([{c:c,n:Fn(t)}],k);
+      }else{
+        c=T.ux*nx+T.uy*ny; if(Math.abs(c)<1e-7) return null;
+        act.forEach(j=>{ if(comp[j.id]===side) k+=ext[j.id].fx*nx+ext[j.id].fy*ny; });
+        line=(Math.abs(nx)<1e-9?'&Sigma;F<sub>y</sub> = 0':Math.abs(ny)<1e-9?'&Sigma;F<sub>x</sub> = 0':'&Sigma;F = 0')+' ('+why+'): '+lin([{c:c,n:Fn(t)}],k);
+      }
+      return {v:-k/c,line:line};
+    };
+    const bodyLine=(comp,side)=>{
+      const js=act.filter(j=>comp[j.id]===side);
+      const ef=js.filter(j=>Math.hypot(ext[j.id].fx,ext[j.id].fy)>tol).map(j=>j.name+' ('+nf(ext[j.id].fx)+', '+nf(ext[j.id].fy)+')');
+      return 'Free body: joints '+js.map(j=>j.name).join(', ')+'. External forces (F<sub>x</sub>, F<sub>y</sub>) in '+fu+': '+(ef.length?ef.join(', '):'none')+'.';
+    };
+    if(opt.secMode==='manual'){
+      const c=opt.cut;
+      if(!c){ res.ok=true; res.hint='Choose the Section cut tool and drag a line across the members you want to cut (three at most).'; }
+      else{
+        const cs=M.filter(mm=>segCross({x:c.x1,y:c.y1},{x:c.x2,y:c.y2},jm[mm.a],jm[mm.b]));
+        res.cutIds=cs.map(mm=>mm.id);
+        const comp=cs.length?split(new Set(res.cutIds)):null;
+        if(!cs.length) res.hint='The section line does not cross any member. Drag it across the members you want to cut.';
+        else if(!comp) res.hint='This cut ('+cs.map(mn).join(', ')+') does not separate the truss into two parts. Draw the line all the way through the truss.';
+        else if(cs.length>3) res.hint='This cut passes through '+cs.length+' members ('+cs.map(mn).join(', ')+'). One free body gives only three equations, so cut three members at most.';
+        else{
+          const side=pickSide(comp,opt.otherSide).s;
+          res.sideIds=act.filter(j=>comp[j.id]===side).map(j=>j.id);
+          const lines=[bodyLine(comp,side)]; let bad=[];
+          cs.forEach(t=>{ const s=secSolve(t,cs.filter(o=>o!==t),comp,side); if(s){res.forces[t.id]=s.v;lines.push(s.line+', so '+Fn(t)+' = '+fv(s.v));} else bad.push(mn(t)); });
+          if(bad.length) lines.push('Not solvable from this cut: '+bad.join(', ')+'. The cut members are concurrent or parallel, so the three equations are not independent.');
+          step('Section through '+cs.map(mn).join(', '),lines);
+          if(bad.length) res.hint='This cut cannot give '+bad.join(', ')+' because the cut members are concurrent or parallel. Try a different cut.';
+        }
+        res.ok=true;
+      }
+    }else{
+      const failed=[];
+      M.forEach((t,ti)=>{
+        let pick=null,backup=null;
+        const tryCut=os=>{
+          const comp=split(new Set([t.id].concat(os.map(o=>o.id)))); if(!comp) return false;
+          const ps=pickSide(comp,false), s=secSolve(t,os,comp,ps.s); if(!s) return false;
+          const cand={os:os,comp:comp,side:ps.s,s:s};
+          if(ps.small>=2){pick=cand;return true;}
+          if(!backup) backup=cand; return false;
+        };
+        const rest=M.filter(o=>o!==t);
+        search:{
+          if(tryCut([])) break search;
+          for(let i=0;i<rest.length;i++) if(tryCut([rest[i]])) break search;
+          if(m<=90) for(let i=0;i<rest.length;i++) for(let k=i+1;k<rest.length;k++) if(tryCut([rest[i],rest[k]])) break search;
+        }
+        pick=pick||backup;
+        if(pick){
+          F[t.id]=pick.s.v;
+          step('Member '+mn(t)+': section through '+[t].concat(pick.os).map(mn).join(', '),[bodyLine(pick.comp,pick.side),pick.s.line,'Result: '+Fn(t)+' = '+fv(pick.s.v)]);
+        }else{ F[t.id]=x[ti]; failed.push(t); }
+      });
+      if(failed.length) step('Members without a usable section',['No section through three or fewer members isolates '+failed.map(mn).join(', ')+'. These forces were found from the joint equations: '+failed.map(mm=>Fn(mm)+' = '+fv(F[mm.id])).join(', ')]);
+      M.forEach(mm=>res.forces[mm.id]=F[mm.id]);
+    }
+  }
+  res.reactions=R.map((q,i)=>({jid:q.j.id,n:q.n,dx:q.dx,dy:q.dy,v:Rv[i]===null?x[m+i]:Rv[i]}));
+  res.full=x.slice(0,m); res.ok=true;
+  return res;
+}
+//</core>
+
+/* ---------- model and state ---------- */
+let S={joints:[],members:[],nid:1};
+const ui={tool:'select',method:'joints',secMode:'auto',cut:null,otherSide:false,snap:0.5,fu:'kN',lu:'m',sel:null,pending:null,mouse:null,supType:'pin',loadFx:0,loadFy:-10};
+const view={ox:100,oy:400,k:60};
+let undoSt=[],redoSt=[],drag=null,raf=0,lastRes=null;
+const $=id=>document.getElementById(id);
+const svg=$('cv');
+const KEY='truss-designer-v1';
+const SUPS={pin:'Pin',rv:'Roller (R y)',rh:'Roller (R x)'};
+const SUPN={pin:'Pin',rv:'Roller (vertical reaction)',rh:'Roller (horizontal reaction)'};
+
+function nextName(){
+  const used=new Set(S.joints.map(j=>j.name));
+  for(let k=0;;k++){ const n=String.fromCharCode(65+k%26)+(k>=26?Math.floor(k/26):''); if(!used.has(n)) return n; }
+}
+function jget(id){return S.joints.find(j=>j.id===id);}
+function addJoint(p){
+  const e=S.joints.find(j=>Math.abs(j.x-p.x)<1e-9&&Math.abs(j.y-p.y)<1e-9); if(e) return e;
+  const j={id:S.nid++,name:nextName(),x:p.x,y:p.y,sup:null,fx:0,fy:0}; S.joints.push(j); return j;
+}
+function addMember(a,b){
+  if(a===b||S.members.some(m=>(m.a===a&&m.b===b)||(m.a===b&&m.b===a))) return false;
+  S.members.push({id:S.nid++,a:a,b:b}); return true;
+}
+function build(js,ms){
+  S={joints:[],members:[],nid:1}; const by={};
+  js.forEach(q=>{const j={id:S.nid++,name:q[0],x:q[1],y:q[2],sup:q[3]||null,fx:q[4]||0,fy:q[5]||0};S.joints.push(j);by[q[0]]=j.id;});
+  ms.split(' ').forEach(p=>addMember(by[p[0]],by[p[1]]));
+}
+const EX={
+  pratt:()=>build([['A',0,0,'pin'],['B',3,0,null,0,-10],['C',6,0,null,0,-20],['D',9,0,null,0,-10],['E',12,0,'rv'],['F',3,3],['G',6,3],['H',9,3]],'AB BC CD DE AF FG GH HE BF CG DH FC HC'),
+  roof:()=>build([['A',0,0,'pin'],['B',4,0],['C',8,0],['D',12,0],['E',16,0,'rv'],['F',4,2,null,0,-6],['G',8,4,null,0,-12],['H',12,2,null,0,-6]],'AB BC CD DE AF FG GH HE BF CG DH FC HC'),
+  cant:()=>build([['A',0,3,'pin'],['B',0,0,'rh'],['C',3,3],['D',3,0],['E',6,0,null,0,-15]],'AB AC AD BD CD CE DE'),
+  tri:()=>build([['A',0,0,'pin'],['B',4,0,'rv'],['C',2,3,null,5,-10]],'AB AC BC')
+};
+function snapshot(){undoSt.push(JSON.stringify(S)); if(undoSt.length>200) undoSt.shift(); redoSt=[];}
+function undo(){ if(!undoSt.length) return; redoSt.push(JSON.stringify(S)); S=JSON.parse(undoSt.pop()); ui.sel=null;ui.pending=null; render(); }
+function redo(){ if(!redoSt.length) return; undoSt.push(JSON.stringify(S)); S=JSON.parse(redoSt.pop()); ui.sel=null;ui.pending=null; render(); }
+function delJoint(id){ snapshot(); S.joints=S.joints.filter(j=>j.id!==id); S.members=S.members.filter(m=>m.a!==id&&m.b!==id); ui.sel=null; if(ui.pending===id) ui.pending=null; }
+function delMember(id){ snapshot(); S.members=S.members.filter(m=>m.id!==id); ui.sel=null; }
+
+/* ---------- view helpers ---------- */
+function size(){const r=svg.getBoundingClientRect();return {w:r.width||800,h:r.height||500};}
+function toWorld(e){const r=svg.getBoundingClientRect();return {x:(e.clientX-r.left-view.ox)/view.k,y:(view.oy-(e.clientY-r.top))/view.k};}
+function sn(p){const s=ui.snap; return s>0?{x:Math.round(p.x/s)*s,y:Math.round(p.y/s)*s}:{x:+p.x.toFixed(4),y:+p.y.toFixed(4)};}
+const X=x=>view.ox+x*view.k, Y=y=>view.oy-y*view.k;
+function fit(){
+  const z=size(); if(!S.joints.length){view.k=60;view.ox=z.w/2;view.oy=z.h/2;return;}
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; S.joints.forEach(j=>{x0=Math.min(x0,j.x);x1=Math.max(x1,j.x);y0=Math.min(y0,j.y);y1=Math.max(y1,j.y);});
+  const pad=Math.min(110,z.w*0.18), w=Math.max(x1-x0,1e-6), h=Math.max(y1-y0,1e-6);
+  view.k=Math.max(1e-3,Math.min((z.w-2*pad)/w,(z.h-2*pad-30)/h,160));
+  view.ox=z.w/2-(x0+x1)/2*view.k; view.oy=z.h/2+(y0+y1)/2*view.k-10;
+}
+
+/* ---------- drawing ---------- */
+function arrow(x1,y1,x2,y2,col){
+  const d=Math.hypot(x2-x1,y2-y1)||1,ux=(x2-x1)/d,uy=(y2-y1)/d,bx=x2-ux*11,by=y2-uy*11;
+  return '<line x1="'+x1+'" y1="'+y1+'" x2="'+bx+'" y2="'+by+'" stroke="'+col+'" stroke-width="2.5"/>'+
+    '<polygon points="'+x2+','+y2+' '+(bx-uy*5)+','+(by+ux*5)+' '+(bx+uy*5)+','+(by-ux*5)+'" fill="'+col+'"/>';
+}
+function supGlyph(j){
+  let s='<g transform="translate('+X(j.x)+','+Y(j.y)+')'+(j.sup==='rh'?' rotate(90)':'')+'" stroke="#111" stroke-width="1.6" fill="#fff">';
+  const gy=j.sup==='pin'?18:22;
+  if(j.sup==='pin') s+='<path d="M0 0 L-11 18 L11 18 Z"/>';
+  else s+='<path d="M0 0 L-10 14 L10 14 Z"/><circle cx="-6" cy="18" r="3.4"/><circle cx="6" cy="18" r="3.4"/>';
+  s+='<line x1="-17" y1="'+gy+'" x2="17" y2="'+gy+'"/>';
+  for(let i=-14;i<=14;i+=7) s+='<line x1="'+i+'" y1="'+gy+'" x2="'+(i-5)+'" y2="'+(gy+6)+'" stroke-width="1"/>';
+  return s+'</g>';
+}
+function draw(res){
+  const z=size(); let h='';
+  let gs=ui.snap>0?ui.snap:1; const mul=[2,2.5,2]; let mi=0; while(gs*view.k<22) gs*=mul[mi++%3];
+  const gx0=Math.floor(-view.ox/view.k/gs)*gs, gy0=Math.floor((view.oy-z.h)/view.k/gs)*gs;
+  h+='<g stroke="#e3e6ea" stroke-width="1">';
+  for(let x=gx0,c=0;X(x)<z.w&&c<400;x+=gs,c++) h+='<line x1="'+X(x)+'" y1="0" x2="'+X(x)+'" y2="'+z.h+'"/>';
+  for(let y=gy0,c=0;Y(y)>0&&c<400;y+=gs,c++) h+='<line x1="0" y1="'+Y(y)+'" x2="'+z.w+'" y2="'+Y(y)+'"/>';
+  h+='</g><g stroke="#aab0b7" stroke-width="1"><line x1="'+X(0)+'" y1="0" x2="'+X(0)+'" y2="'+z.h+'"/><line x1="0" y1="'+Y(0)+'" x2="'+z.w+'" y2="'+Y(0)+'"/></g>';
+  const jm={}; S.joints.forEach(j=>jm[j.id]=j);
+  const side=new Set(res.sideIds);
+  S.joints.forEach(j=>{ if(side.has(j.id)) h+='<circle cx="'+X(j.x)+'" cy="'+Y(j.y)+'" r="16" fill="#fff1d6"/>'; });
+  S.joints.forEach(j=>{ if(j.sup) h+=supGlyph(j); });
+  const labels=[],occ={};
+  S.joints.forEach(j=>occ[j.id]=j.sup?[j.sup==='rh'?[-1,0]:[0,1]]:[]);
+  S.members.forEach(m=>{
+    const a=jm[m.a],b=jm[m.b]; if(!a||!b) return;
+    const ml=Math.hypot(b.x-a.x,b.y-a.y)||1,mx=(b.x-a.x)/ml,my=-(b.y-a.y)/ml; occ[a.id].push([mx,my]); occ[b.id].push([-mx,-my]);
+    const v=res.ok?res.forces[m.id]:undefined; let col='#333',dash='';
+    if(v!==undefined){ if(Math.abs(v)<=res.tol){col='#8a8f96';dash=' stroke-dasharray="7 5"';} else col=v>0?'#1558b0':'#c62828'; }
+    const sel=ui.sel&&ui.sel.t==='m'&&ui.sel.id===m.id;
+    if(sel) h+='<line x1="'+X(a.x)+'" y1="'+Y(a.y)+'" x2="'+X(b.x)+'" y2="'+Y(b.y)+'" stroke="#e08a00" stroke-width="10" stroke-linecap="round"/>';
+    h+='<line x1="'+X(a.x)+'" y1="'+Y(a.y)+'" x2="'+X(b.x)+'" y2="'+Y(b.y)+'" stroke="'+col+'" stroke-width="'+(v!==undefined?4.5:3)+'" stroke-linecap="round"'+dash+'/>';
+    h+='<line data-m="'+m.id+'" x1="'+X(a.x)+'" y1="'+Y(a.y)+'" x2="'+X(b.x)+'" y2="'+Y(b.y)+'" stroke="transparent" stroke-width="16" style="cursor:pointer"/>';
+    if(v!==undefined) labels.push('<text class="ml" x="'+(X(a.x)+X(b.x))/2+'" y="'+(Y(a.y)+Y(b.y))/2+'" text-anchor="middle" dominant-baseline="central">'+(Math.abs(v)<=res.tol?'0':nf(Math.abs(v),2)+' ('+(v>0?'T':'C')+')')+'</text>');
+  });
+  if(ui.pending!=null&&ui.mouse&&jm[ui.pending]){ const a=jm[ui.pending],p=sn(ui.mouse); h+='<line x1="'+X(a.x)+'" y1="'+Y(a.y)+'" x2="'+X(p.x)+'" y2="'+Y(p.y)+'" stroke="#333" stroke-width="2" stroke-dasharray="5 4"/>'; }
+  S.joints.forEach(j=>{
+    const f=Math.hypot(j.fx||0,j.fy||0); if(!f) return;
+    const dx=j.fx/f,dy=-j.fy/f,x=X(j.x),y=Y(j.y);
+    const away=(occ[j.id]||[]).some(o=>-(o[0]*dx+o[1]*dy)>0.9), sg=away?1:-1;
+    if(away) h+=arrow(x+dx*9,y+dy*9,x+dx*66,y+dy*66,'#0b7a3b'); else h+=arrow(x-dx*66,y-dy*66,x-dx*9,y-dy*9,'#0b7a3b');
+    occ[j.id].push([sg*dx,sg*dy]);
+    labels.push('<text class="al" x="'+(x+sg*dx*80)+'" y="'+(y+sg*dy*80)+'" text-anchor="middle" dominant-baseline="central">'+nf(f,2)+' '+ui.fu+'</text>');
+  });
+  if(res.ok) res.reactions.forEach(q=>{
+    if(Math.abs(q.v)<=res.tol) return; const j=jm[q.jid],s=q.v>0?1:-1,dx=q.dx*s,dy=-q.dy*s,x=X(j.x),y=Y(j.y);
+    h+=arrow(x-dx*78,y-dy*78,x-dx*32,y-dy*32,'#7b3fb3');
+    labels.push('<text class="al" x="'+(x-dx*92-(dx?0:0))+'" y="'+(y-dy*90)+'" text-anchor="middle" dominant-baseline="central">'+nf(Math.abs(q.v),2)+' '+ui.fu+'</text>');
+  });
+  if(ui.cut&&ui.method==='sections'&&ui.secMode==='manual'){
+    const c=ui.cut; h+='<line x1="'+X(c.x1)+'" y1="'+Y(c.y1)+'" x2="'+X(c.x2)+'" y2="'+Y(c.y2)+'" stroke="#e08a00" stroke-width="3" stroke-dasharray="10 6"/>';
+    labels.push('<text class="al" x="'+X(c.x1)+'" y="'+(Y(c.y1)-10)+'" text-anchor="middle">section</text>');
+  }
+  S.joints.forEach(j=>{
+    const sel=(ui.sel&&ui.sel.t==='j'&&ui.sel.id===j.id)||ui.pending===j.id;
+    h+='<circle cx="'+X(j.x)+'" cy="'+Y(j.y)+'" r="6.5" fill="#fff" stroke="'+(sel?'#e08a00':'#000')+'" stroke-width="'+(sel?4:2.2)+'"/>';
+    h+='<circle data-j="'+j.id+'" cx="'+X(j.x)+'" cy="'+Y(j.y)+'" r="13" fill="transparent" style="cursor:pointer"/>';
+    let bd=null,bs=9;
+    [[-.707,-.707],[.707,-.707],[0,-1],[-1,0],[1,0],[-.707,.707],[.707,.707],[0,1]].forEach(c=>{ let sc=-1; occ[j.id].forEach(o=>sc=Math.max(sc,o[0]*c[0]+o[1]*c[1])); if(sc<bs-0.05){bs=sc;bd=c;} });
+    labels.push('<text class="jl" x="'+(X(j.x)+bd[0]*21)+'" y="'+(Y(j.y)+bd[1]*21)+'" text-anchor="middle" dominant-baseline="central">'+j.name+'</text>');
+  });
+  svg.innerHTML=h+labels.join('');
+}
+function tables(res){
+  const fid=document.activeElement&&document.activeElement.id;
+  const jm={}; S.joints.forEach(j=>jm[j.id]=j);
+  let h='<tr><th>Member</th><th>Length ('+ui.lu+')</th><th>Force ('+ui.fu+')</th><th>Type</th><th></th></tr>';
+  S.members.forEach(m=>{
+    const a=jm[m.a],b=jm[m.b]; if(!a||!b) return; const v=res.ok?res.forces[m.id]:undefined; let f='',t='';
+    if(v!==undefined){ const z=Math.abs(v)<=res.tol; f=z?'0':nf(Math.abs(v)); t=z?'<span class="sw" style="border-color:#8a8f96;border-top-style:dashed"></span>Zero-force':v>0?'<span class="sw" style="border-color:#1558b0"></span>Tension':'<span class="sw" style="border-color:#c62828"></span>Compression'; }
+    h+='<tr'+(ui.sel&&ui.sel.t==='m'&&ui.sel.id===m.id?' class="sel"':'')+'><td>'+a.name+b.name+'</td><td>'+nf(Math.hypot(b.x-a.x,b.y-a.y))+'</td><td>'+f+'</td><td style="text-align:left">'+t+'</td><td><button data-dm="'+m.id+'" title="Delete member" aria-label="Delete member '+a.name+b.name+'">&times;</button></td></tr>';
+  });
+  if(!S.members.length) h+='<tr><td colspan="5" style="font-weight:normal">No members yet.</td></tr>';
+  $('mt').innerHTML=h;
+  h='<tr><th>Reaction</th><th>Value ('+ui.fu+')</th><th>Direction</th></tr>';
+  if(res.ok&&res.reactions.length) res.reactions.forEach(q=>{ const z=Math.abs(q.v)<=res.tol; h+='<tr><td>'+q.n+'</td><td>'+nf(Math.abs(q.v))+'</td><td style="text-align:left">'+(z?'':q.dx?(q.v>0?'to the right':'to the left'):(q.v>0?'upward':'downward'))+'</td></tr>'; });
+  else h+='<tr><td colspan="3" style="font-weight:normal">Not available.</td></tr>';
+  $('rt').innerHTML=h;
+  h='<tr><th>Joint</th><th>x ('+ui.lu+')</th><th>y ('+ui.lu+')</th><th>Support</th><th>F<sub>x</sub> ('+ui.fu+')</th><th>F<sub>y</sub> ('+ui.fu+')</th><th></th></tr>';
+  S.joints.forEach(j=>{
+    const inp=(f,v)=>'<td><input type="number" step="any" id="j'+j.id+f+'" data-jid="'+j.id+'" data-f="'+f+'" value="'+(+(+v).toFixed(6))+'" aria-label="Joint '+j.name+' '+f+'"></td>';
+    h+='<tr'+(ui.sel&&ui.sel.t==='j'&&ui.sel.id===j.id?' class="sel"':'')+'><td>'+j.name+'</td>'+inp('x',j.x)+inp('y',j.y)+
+      '<td><select id="j'+j.id+'sup" data-jid="'+j.id+'" data-f="sup" aria-label="Joint '+j.name+' support"><option value="">None</option>'+Object.keys(SUPS).map(k=>'<option value="'+k+'"'+(j.sup===k?' selected':'')+' title="'+SUPN[k]+'">'+SUPS[k]+'</option>').join('')+'</select></td>'+
+      inp('fx',j.fx||0)+inp('fy',j.fy||0)+'<td><button data-dj="'+j.id+'" title="Delete joint" aria-label="Delete joint '+j.name+'">&times;</button></td></tr>';
+  });
+  if(!S.joints.length) h+='<tr><td colspan="7" style="font-weight:normal">No joints yet.</td></tr>';
+  $('jt').innerHTML=h;
+  if(fid){const el=$(fid); if(el) el.focus();}
+  const st=$('status'); let s='';
+  if(res.err){ st.className='bad'; s='<p><b>Cannot analyze.</b> '+res.err+'</p>'; }
+  else{
+    st.className=res.hint?'':'ok';
+    s='<p><b>Statically determinate and stable.</b> '+res.det+'.</p>';
+    if(res.hint) s+='<p>'+res.hint+'</p>';
+    else if(ui.method==='sections'&&ui.secMode==='manual') s+='<p>Forces are shown for the cut members only.</p>';
+  }
+  res.warn.forEach(w=>s+='<p>Note: '+w+'</p>');
+  st.innerHTML=s;
+  $('steps').innerHTML=res.steps.length?res.steps.map(p=>'<div class="step"><b>'+p.t+'</b>'+p.l.map(l=>'<div>'+l+'</div>').join('')+'</div>').join(''):'<p>The worked solution appears here once the truss can be analyzed.</p>';
+}
+function optsBar(){
+  const t=ui.tool; let h='<label for="snap">Snap</label><select id="snap">'+[0,0.1,0.25,0.5,1,2,5].map(v=>'<option value="'+v+'"'+(ui.snap===v?' selected':'')+'>'+(v?v+' '+ui.lu:'Off')+'</option>').join('')+'</select><span class="sep"></span>';
+  if(t==='select') h+='<span>Drag a joint to move it. Drag empty space to pan and scroll to zoom. Delete removes the selected item.</span>';
+  if(t==='joint') h+='<span>Click on the board to place a joint.</span>';
+  if(t==='member') h+='<span>Click two joints to connect them. Clicking empty space creates a new joint there.</span>';
+  if(t==='support') h+='<label for="supT">Type</label><select id="supT">'+Object.keys(SUPN).map(k=>'<option value="'+k+'"'+(ui.supType===k?' selected':'')+'>'+SUPN[k]+'</option>').join('')+'<option value="none"'+(ui.supType==='none'?' selected':'')+'>Remove support</option></select><span>Then click a joint.</span>';
+  if(t==='load') h+='<label for="lFx">F<sub>x</sub></label><input type="number" step="any" id="lFx" value="'+ui.loadFx+'"><label for="lFy">F<sub>y</sub></label><input type="number" step="any" id="lFy" value="'+ui.loadFy+'"><span>'+ui.fu+'. Then click a joint. Negative F<sub>y</sub> acts downward; 0 and 0 removes the load.</span>';
+  if(t==='cut') h+='<span>Drag a line across the members to cut (three at most).</span><label><input type="checkbox" id="oSide"'+(ui.otherSide?' checked':'')+'> Use the other side as the free body</label><button id="cClr">Clear cut</button>';
+  if(t==='delete') h+='<span>Click a joint or a member to delete it.</span>';
+  $('opts').innerHTML=h;
+  document.querySelectorAll('#tools button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===t?'true':'false'));
+  $('mJ').checked=ui.method==='joints'; $('mS').checked=ui.method==='sections';
+  $('sA').checked=ui.secMode==='auto'; $('sM').checked=ui.secMode==='manual';
+  $('sA').disabled=$('sM').disabled=ui.method!=='sections';
+  $('fu').value=ui.fu; $('lu').value=ui.lu;
+  svg.style.cursor=t==='select'?'default':'crosshair';
+}
+function render(){
+  raf=0;
+  lastRes=analyzeTruss(S,{method:ui.method,secMode:ui.secMode,cut:ui.cut,otherSide:ui.otherSide,fu:ui.fu,lu:ui.lu});
+  draw(lastRes); tables(lastRes);
+  try{localStorage.setItem(KEY,JSON.stringify({S:S,ui:{method:ui.method,secMode:ui.secMode,snap:ui.snap,fu:ui.fu,lu:ui.lu}}));}catch(e){}
+}
+function schedule(){ if(!raf) raf=requestAnimationFrame(render); }
+function quick(){ if(!raf) raf=requestAnimationFrame(()=>{raf=0; if(lastRes) draw(lastRes);}); }
+function setTool(t){
+  ui.tool=t; ui.pending=null;
+  if(t==='cut'){ui.method='sections';ui.secMode='manual';}
+  optsBar(); render();
+}
+
+/* ---------- pointer interaction ---------- */
+function hit(e,k){const el=e.target.closest?e.target.closest('[data-'+k+']'):null;return el?+el.dataset[k]:null;}
+svg.addEventListener('pointerdown',e=>{
+  if(e.button===2) return;
+  try{svg.setPointerCapture(e.pointerId);}catch(x){}
+  const w=toWorld(e),hj=hit(e,'j'),hm=hit(e,'m'),t=ui.tool;
+  if(e.button===1||(t==='select'&&hj==null&&hm==null)){ drag={type:'pan',sx:e.clientX,sy:e.clientY,ox:view.ox,oy:view.oy,moved:false}; e.preventDefault(); return; }
+  if(t==='select'){
+    if(hj!=null){ui.sel={t:'j',id:hj};drag={type:'joint',id:hj,moved:false};} else ui.sel={t:'m',id:hm};
+  }else if(t==='joint'){ if(hj==null){snapshot();const j=addJoint(sn(w));ui.sel={t:'j',id:j.id};} }
+  else if(t==='member'){
+    let id=hj,made=false;
+    if(id==null){snapshot();id=addJoint(sn(w)).id;made=true;}
+    if(ui.pending==null) ui.pending=id;
+    else{ if(id!==ui.pending){ if(!made) snapshot(); if(!addMember(ui.pending,id)&&!made) undoSt.pop(); } ui.pending=null; }
+  }
+  else if(t==='support'){ if(hj!=null){snapshot();jget(hj).sup=ui.supType==='none'?null:ui.supType;ui.sel={t:'j',id:hj};} }
+  else if(t==='load'){ if(hj!=null){snapshot();const j=jget(hj);j.fx=ui.loadFx;j.fy=ui.loadFy;ui.sel={t:'j',id:hj};} }
+  else if(t==='cut'){ ui.cut={x1:w.x,y1:w.y,x2:w.x,y2:w.y}; drag={type:'cut'}; }
+  else if(t==='delete'){ if(hj!=null) delJoint(hj); else if(hm!=null) delMember(hm); }
+  render();
+});
+svg.addEventListener('pointermove',e=>{
+  ui.mouse=toWorld(e);
+  if(!drag){ if(ui.pending!=null) quick(); return; }
+  if(drag.type==='pan'){ const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy; if(Math.abs(dx)+Math.abs(dy)>3) drag.moved=true; view.ox=drag.ox+dx;view.oy=drag.oy+dy; quick(); }
+  else if(drag.type==='joint'){
+    const j=jget(drag.id),p=sn(ui.mouse); if(!j||(j.x===p.x&&j.y===p.y)) return;
+    if(!drag.moved){snapshot();drag.moved=true;} j.x=p.x;j.y=p.y; schedule();
+  }else if(drag.type==='cut'){ ui.cut.x2=ui.mouse.x;ui.cut.y2=ui.mouse.y; schedule(); }
+});
+function endDrag(){
+  if(!drag) return;
+  if(drag.type==='pan'&&!drag.moved&&ui.sel){ui.sel=null;render();}
+  if(drag.type==='cut'&&Math.hypot(ui.cut.x2-ui.cut.x1,ui.cut.y2-ui.cut.y1)*view.k<6){ui.cut=null;render();}
+  drag=null;
+}
+svg.addEventListener('pointerup',endDrag); svg.addEventListener('pointercancel',endDrag);
+svg.addEventListener('wheel',e=>{
+  e.preventDefault(); const r=svg.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,f=Math.exp(-e.deltaY*0.0015);
+  const k=Math.max(0.01,Math.min(5000,view.k*f)),g=k/view.k; view.ox=px-(px-view.ox)*g; view.oy=py-(py-view.oy)*g; view.k=k; quick();
+},{passive:false});
+svg.addEventListener('contextmenu',e=>e.preventDefault());
+
+/* ---------- controls ---------- */
+$('tools').addEventListener('click',e=>{const b=e.target.closest('button');if(b) setTool(b.dataset.tool);});
+$('opts').addEventListener('change',e=>{
+  const id=e.target.id;
+  if(id==='snap'){ui.snap=+e.target.value;render();}
+  if(id==='supT') ui.supType=e.target.value;
+  if(id==='lFx') ui.loadFx=+e.target.value||0;
+  if(id==='lFy') ui.loadFy=+e.target.value||0;
+  if(id==='oSide'){ui.otherSide=e.target.checked;render();}
+});
+$('opts').addEventListener('click',e=>{ if(e.target.id==='cClr'){ui.cut=null;render();} });
+document.querySelectorAll('input[name=method]').forEach(el=>el.addEventListener('change',()=>{ui.method=el.value; if(ui.method==='joints'&&ui.tool==='cut') ui.tool='select'; optsBar();render();}));
+document.querySelectorAll('input[name=secmode]').forEach(el=>el.addEventListener('change',()=>{ui.secMode=el.value; if(ui.secMode==='manual') ui.tool='cut'; else if(ui.tool==='cut') ui.tool='select'; optsBar();render();}));
+$('fu').addEventListener('change',e=>{ui.fu=e.target.value;optsBar();render();});
+$('lu').addEventListener('change',e=>{ui.lu=e.target.value;optsBar();render();});
+$('ex').addEventListener('change',e=>{ if(EX[e.target.value]){snapshot();const u=undoSt;EX[e.target.value]();undoSt=u;ui.sel=null;ui.pending=null;ui.cut=null;fit();render();} e.target.value=''; });
+$('bUndo').onclick=undo; $('bRedo').onclick=redo;
+$('bFit').onclick=()=>{fit();render();};
+$('bClear').onclick=()=>{snapshot();S={joints:[],members:[],nid:1};ui.sel=null;ui.pending=null;ui.cut=null;render();};
+$('jt').addEventListener('change',e=>{
+  const d=e.target.dataset; if(!d.jid) return; const j=jget(+d.jid); if(!j) return; snapshot();
+  if(d.f==='sup') j.sup=e.target.value||null; else{ const v=parseFloat(e.target.value); j[d.f]=isFinite(v)?v:0; }
+  setTimeout(render,0);
+});
+$('jt').addEventListener('click',e=>{const b=e.target.closest('[data-dj]'); if(b){delJoint(+b.dataset.dj);render();}});
+$('mt').addEventListener('click',e=>{const b=e.target.closest('[data-dm]'); if(b){delMember(+b.dataset.dm);render();}});
+document.addEventListener('keydown',e=>{
+  const tag=(e.target.tagName||'').toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault(); if(e.shiftKey) redo(); else undo();}
+  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();redo();}
+  else if(e.key==='Escape'){ui.pending=null;ui.sel=null;render();}
+  else if((e.key==='Delete'||e.key==='Backspace')&&ui.sel){ e.preventDefault(); if(ui.sel.t==='j') delJoint(ui.sel.id); else delMember(ui.sel.id); render(); }
+});
+$('bData').onclick=()=>{$('dTxt').value=JSON.stringify(S);$('dMsg').textContent='';$('dlg').classList.add('open');$('dTxt').focus();$('dTxt').select();};
+$('dClose').onclick=()=>$('dlg').classList.remove('open');
+$('dCopy').onclick=()=>{ const t=$('dTxt'); t.select(); try{navigator.clipboard.writeText(t.value).then(()=>$('dMsg').textContent='Copied.',()=>$('dMsg').textContent='Copy was blocked. Press Ctrl+C to copy the selected text.');}catch(x){$('dMsg').textContent='Press Ctrl+C to copy the selected text.';} };
+$('dOpen').onclick=()=>{
+  try{
+    const d=JSON.parse($('dTxt').value); if(!Array.isArray(d.joints)||!Array.isArray(d.members)) throw 0;
+    snapshot(); let nid=1; d.joints.forEach(j=>{j.x=+j.x||0;j.y=+j.y||0;j.fx=+j.fx||0;j.fy=+j.fy||0;j.name=String(j.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,4)||'J';j.sup=SUPN[j.sup]?j.sup:null;nid=Math.max(nid,j.id+1);});
+    d.members.forEach(m=>nid=Math.max(nid,m.id+1)); S={joints:d.joints,members:d.members,nid:nid};
+    ui.sel=null;ui.pending=null;ui.cut=null; $('dlg').classList.remove('open'); fit(); render();
+  }catch(x){$('dMsg').textContent='That text is not a saved truss. Paste the full text that was copied from this dialog.';}
+};
+
+/* ---------- start ---------- */
+(function(){
+  let ok=false;
+  try{ const d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.S&&Array.isArray(d.S.joints)&&d.S.joints.length){S=d.S;Object.assign(ui,d.ui||{});ok=true;} }catch(e){}
+  if(!ok) EX.pratt();
+  optsBar(); fit(); render();
+  if(window.ResizeObserver){ let first=true; new ResizeObserver(()=>{ if(first){first=false;fit();} quick(); }).observe(svg); }
+})();
+</script>
+</body>
+</html>
